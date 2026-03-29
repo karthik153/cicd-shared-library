@@ -7,8 +7,9 @@ pipeline {
     stages {
         stage('1. Checkout ACE App Repo') {
             steps {
-                cleanWs()
+                // Instead of nuking the whole workspace, just enter the 'app-src' folder and wipe only that folder!
                 dir('app-src') {
+                    deleteDir() 
                     git url: "${params.APP_GIT_URL}", branch: "${params.APP_BRANCH}", credentialsId: 'github-creds'
                 }
             }
