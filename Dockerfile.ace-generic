@@ -1,0 +1,21 @@
+# STAGE 1: Builder
+FROM ace:latest AS builder
+USER root
+ARG APP_NAME
+RUN mkdir -p /workspace/app-src
+COPY ./app-src /workspace/app-src/
+ENV LICENSE=accept
+
+# Find your local ACE version dynamically and compile the bar
+RUN /bin/bash -c "source /opt/ibm/ace-*/server/bin/mqsiprofile && \
+    mqsicreatebar -data /workspace/app-src -b /workspace/build.bar -a ${APP_NAME}"
+
+# STAGE 2: Runner
+FROM ace:latest
+ENV LICENSE=accept
+USER root
+COPY --from=builder /workspace/build.bar /home/aceuser/initial-config/bars/
+
+# Set safe aceuser permissions
+RUN chown -R 1000:1000 /home/aceuser/initial-config/
+USER 1000
