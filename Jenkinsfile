@@ -49,22 +49,25 @@ pipeline {
             }
         }
         stage('5. Run Standardized ACE Container') {
-            steps {
-                script {
-                    def runCmd = "docker run -d --name run-ace-${env.IMAGE_NAME} "
-                    
-                    if (env.REQUIRES_MQ == 'true') { runCmd += "--network mq-net " }
-                    if (env.REQUIRES_REDIS == 'true') { runCmd += "--network redis-net " }
-                    if (env.REQUIRES_CREDS == 'true') { 
-                        runCmd += "-v ${WORKSPACE}/setdbparms.txt:/home/aceuser/initial-config/setdbparms/setdbparms.txt:ro "
-                    }
-                    runCmd += "app-ace-${env.IMAGE_NAME}:latest"
-                    
-                    // Uses lowercase logic for cleaning old instances
-                    sh "docker rm -f run-ace-${env.IMAGE_NAME} || true"
-                    sh "${runCmd}"
-                }
-            }
-        }
+			steps {
+				script {
+					def runCmd = "docker run -d --name run-ace-${env.IMAGE_NAME} "
+
+					// Add port mappings for ACE Admin API and flows
+					runCmd += "-p 7600:7600 "   // Admin REST API
+					runCmd += "-p 7800:7800 "   // Example flow HTTP Input port
+
+					if (env.REQUIRES_MQ == 'true') { runCmd += "--network mq-net " }
+					if (env.REQUIRES_REDIS == 'true') { runCmd += "--network redis-net " }
+					if (env.REQUIRES_CREDS == 'true') {
+						runCmd += "-v ${WORKSPACE}/setdbparms.txt:/home/aceuser/initial-config/setdbparms/setdbparms.txt:ro "
+					}
+					runCmd += "app-ace-${env.IMAGE_NAME}:latest"
+
+					sh "docker rm -f run-ace-${env.IMAGE_NAME} || true"
+					sh "${runCmd}"
+				}
+			}
+		}
     }
 }
