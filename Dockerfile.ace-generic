@@ -31,3 +31,4 @@ RUN chown -R aceuser:root /home/aceuser/ /var/mqsi/ || true && \
 
 # Execute as the authorized text name string mapped securely in ACE OS
 USER aceuser
+ENTRYPOINT ["/bin/bash", "-c", ". /opt/ibm/ace-*/server/bin/mqsiprofile && IntegrationServer -w /home/aceuser/ace-server"]
