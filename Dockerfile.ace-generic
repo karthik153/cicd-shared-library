@@ -1,21 +1,33 @@
-# STAGE 1: Builder
+# ==========================================
+# STAGE 1: Build Stage (Compile the BAR file)
+# ==========================================
 FROM ace:latest AS builder
 USER root
 ARG APP_NAME
+
 RUN mkdir -p /workspace/app-src
 COPY ./app-src /workspace/app-src/
 ENV LICENSE=accept
 
-# Find your local ACE version dynamically and compile the bar
-RUN bash -c "source /opt/ibm/ace-*/server/bin/mqsiprofile && \
-    ibmint package --input-path /workspace/app-src/${APP_NAME} --output-bar-file /workspace/build.bar --do-not-compile-java"
+# Compile code in modern ACE 13
+RUN /bin/bash -c "source /opt/ibm/ace-*/server/bin/mqsiprofile && \
+    ibmint package --input-path /workspace/app-src --output-bar-file /workspace/build.bar --project ${APP_NAME}"
 
-# STAGE 2: Runner
+# ==========================================
+# STAGE 2: Runtime Server Stage
+# ==========================================
 FROM ace:latest
 ENV LICENSE=accept
+
+# Temporarily jump into the master root user to organize file structures 
 USER root
+
 COPY --from=builder /workspace/build.bar /home/aceuser/initial-config/bars/
 
-# Set safe aceuser permissions
-RUN chown -R 1000:1000 /home/aceuser/initial-config/
-USER 1000
+# Force proper directory ownership to support the internal IBM startup scripts
+# Give liberal rights so ACE has space to extract the code on initialization
+RUN chown -R aceuser:root /home/aceuser/ /var/mqsi/ || true && \
+    chmod -R 775 /home/aceuser/ /var/mqsi/
+
+# Execute as the authorized text name string mapped securely in ACE OS
+USER aceuser
