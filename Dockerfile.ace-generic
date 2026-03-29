@@ -1,5 +1,5 @@
 # ==========================================
-# STAGE 1: Build Stage (Compile the BAR file)
+# STAGE 1: Build Stage (Compile & Unpack)
 # ==========================================
 FROM ace:latest AS builder
 USER root
@@ -9,26 +9,27 @@ RUN mkdir -p /workspace/app-src
 COPY ./app-src /workspace/app-src/
 ENV LICENSE=accept
 
-# Compile code in modern ACE 13
+# Step A: Compile the Source code into the build.bar file
 RUN /bin/bash -c "source /opt/ibm/ace-*/server/bin/mqsiprofile && \
     ibmint package --input-path /workspace/app-src --output-bar-file /workspace/build.bar --project ${APP_NAME}"
+
+# Step B: Bake/Unpack the .bar file into an actual ACE Working Directory directly in Stage 1!
+RUN /bin/bash -c "source /opt/ibm/ace-*/server/bin/mqsiprofile && \
+    mqsicreateworkdir /workspace/ace-server && \
+    ibmint deploy --input-bar-file /workspace/build.bar --output-work-directory /workspace/ace-server"
 
 # ==========================================
 # STAGE 2: Runtime Server Stage
 # ==========================================
 FROM ace:latest
 ENV LICENSE=accept
-
-# Temporarily jump into the master root user to organize file structures 
 USER root
 
-COPY --from=builder /workspace/build.bar /home/aceuser/initial-config/bars/
+# Instead of copying the compressed BAR file, we copy the pre-extracted application work directory!
+COPY --from=builder /workspace/ace-server /home/aceuser/ace-server/
 
-# Force proper directory ownership to support the internal IBM startup scripts
-# Give liberal rights so ACE has space to extract the code on initialization
+# Set secure IBM File Ownership and execution permissions for the extracted files
 RUN chown -R aceuser:root /home/aceuser/ /var/mqsi/ || true && \
     chmod -R 775 /home/aceuser/ /var/mqsi/
 
-# Execute as the authorized text name string mapped securely in ACE OS
 USER aceuser
-ENTRYPOINT ["/bin/bash", "-c", ". /opt/ibm/ace-*/server/bin/mqsiprofile && IntegrationServer -w /home/aceuser/ace-server"]
