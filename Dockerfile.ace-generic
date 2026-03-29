@@ -7,8 +7,8 @@ COPY ./app-src /workspace/app-src/
 ENV LICENSE=accept
 
 # Find your local ACE version dynamically and compile the bar
-RUN /bin/bash -c "source /opt/ibm/ace-*/server/bin/mqsiprofile && \
-    mqsicreatebar -data /workspace/app-src -b /workspace/build.bar -a ${APP_NAME}"
+RUN bash -c "source /opt/ibm/ace-*/server/bin/mqsiprofile && \
+    ibmint package --input-path /workspace/app-src/${APP_NAME} --output-bar-file /workspace/build.bar --do-not-compile-java"
 
 # STAGE 2: Runner
 FROM ace:latest
