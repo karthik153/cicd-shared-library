@@ -9,7 +9,6 @@ pipeline {
             steps {
                 cleanWs()
                 dir('app-src') {
-                    // Uses 'github-creds' to authenticate with Github
                     git url: "${params.APP_GIT_URL}", branch: "${params.APP_BRANCH}", credentialsId: 'github-creds'
                 }
             }
@@ -19,6 +18,9 @@ pipeline {
                 script {
                     def config = readJSON file: "app-src/pipeline-config.json"
                     env.APP_NAME = config.appName
+                    // Fix: Force lowercase exclusively for Docker naming rules!
+                    env.IMAGE_NAME = config.appName.toLowerCase() 
+                    
                     env.REQUIRES_MQ = config.dependencies.mq
                     env.REQUIRES_REDIS = config.dependencies.redis
                     env.REQUIRES_CREDS = config.requiresDbParms
@@ -30,7 +32,6 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'DB_CRED', passwordVariable: 'DB_PWD', usernameVariable: 'DB_USER')]) {
                     script {
-                        // Writes db credentials into setdbparms.txt securely
                         sh "echo 'odbc::myDB ${DB_USER} ${DB_PWD}' > setdbparms.txt"
                         sh "echo 'redis::myRedis serverName::${DB_PWD}' >> setdbparms.txt" 
                     }
@@ -40,24 +41,26 @@ pipeline {
         stage('4. Build Target Container') {
             steps {
                 script {
-                    sh "docker build -f Dockerfile.ace-generic --build-arg APP_NAME=${env.APP_NAME} -t app-ace-${env.APP_NAME}:latest ."
+                    // Fix: Passes standard Case-Sensitive APP_NAME to mqsicreatebar, 
+                    // but uses lowercase IMAGE_NAME for tagging the Docker container.
+                    sh "docker build -f Dockerfile.ace-generic --build-arg APP_NAME=${env.APP_NAME} -t app-ace-${env.IMAGE_NAME}:latest ."
                 }
             }
         }
         stage('5. Run Standardized ACE Container') {
             steps {
                 script {
-                    def runCmd = "docker run -d --name ${env.APP_NAME} "
+                    def runCmd = "docker run -d --name run-ace-${env.IMAGE_NAME} "
                     
                     if (env.REQUIRES_MQ == 'true') { runCmd += "--network mq-net " }
                     if (env.REQUIRES_REDIS == 'true') { runCmd += "--network redis-net " }
                     if (env.REQUIRES_CREDS == 'true') { 
                         runCmd += "-v ${WORKSPACE}/setdbparms.txt:/home/aceuser/initial-config/setdbparms/setdbparms.txt:ro "
                     }
-                    runCmd += "app-ace-${env.APP_NAME}:latest"
+                    runCmd += "app-ace-${env.IMAGE_NAME}:latest"
                     
-                    // Stop any older versions and deploy the newly built version!
-                    sh "docker rm -f ${env.APP_NAME} || true"
+                    // Uses lowercase logic for cleaning old instances
+                    sh "docker rm -f run-ace-${env.IMAGE_NAME} || true"
                     sh "${runCmd}"
                 }
             }
