@@ -4,36 +4,32 @@ def call(Map config) {
         
         environment {
             APP_NAME = "${config.appName}"
-            ACE_PROJECT = "${config.aceProjectName}"
             HOST_PORT = "${config.hostPort ?: '7800'}"
             ADMIN_PORT = "${config.adminPort ?: '9483'}"
         }
 
         stages {
-            // Inside vars/acev13Pipeline.groovy in the shared library repo
-
-			stage('1. Build ACE BAR') {
-				steps {
-					sh """
-						docker run --rm \
-							-u root \
-							--entrypoint "" \
-							-e LICENSE=accept \
-							-v ${WORKSPACE}:/src \
-							ace:latest /bin/bash -c "
-								source /opt/ibm/ace-13/server/bin/mqsiprofile && \
-								mkdir -p /src/generated-bars && \
-								ibmint package --input-path /src --output-bar-file /src/generated-bars/app.bar --all-projects && \
-								chmod -R 777 /src/generated-bars
-							"
-					"""
-				}
-			}
+            stage('1. Build ACE BAR') {
+                steps {
+                    sh """
+                        docker run --rm \
+                            -u root \
+                            --entrypoint "" \
+                            -e LICENSE=accept \
+                            -v ${WORKSPACE}:/src \
+                            ace:latest /bin/bash -c "
+                                source /opt/ibm/ace-13/server/bin/mqsiprofile && \
+                                mkdir -p /src/generated-bars && \
+                                ibmint package --input-path /src --output-bar-file /src/generated-bars/app.bar --compile-maps-and-schemas && \
+                                chmod -R 777 /src/generated-bars
+                            "
+                    """
+                }
+            }
 
             stage('2. Build App Image') {
                 steps {
                     script {
-                        // GENERATE DOCKERFILE AUTOMATICALLY
                         def dockerfileContent = """
                             FROM ace:latest
                             USER root
@@ -46,11 +42,10 @@ def call(Map config) {
                             EXPOSE 7800 9483
                         """.stripIndent()
 
-                        // Write the file to the current workspace
                         writeFile file: 'Dockerfile', text: dockerfileContent
 
-                        // Use the existing library function to build the image
-                        dockerLib.buildImage("${env.APP_NAME}")
+                        // Direct docker command for reliability
+                        sh "docker build -t ${env.APP_NAME}:latest ."
                     }
                 }
             }
