@@ -4,6 +4,8 @@ def call(Map config) {
         
         environment {
             APP_NAME = "${config.appName}"
+            // Use the name passed from Jenkinsfile, or default to 'testapp'
+            ACE_PROJECT = "${config.aceProjectName ?: 'testapp'}"
             HOST_PORT = "${config.hostPort ?: '7800'}"
             ADMIN_PORT = "${config.adminPort ?: '9483'}"
         }
@@ -19,8 +21,9 @@ def call(Map config) {
                             -v ${WORKSPACE}:/src \
                             ace:latest /bin/bash -c "
                                 source /opt/ibm/ace-13/server/bin/mqsiprofile && \
+                                echo 'Checking workspace content:' && ls -F /src && \
                                 mkdir -p /src/generated-bars && \
-                                ibmint package --input-path /src --output-bar-file /src/generated-bars/app.bar --compile-maps-and-schemas && \
+                                ibmint package --input-path /src --output-bar-file /src/generated-bars/app.bar --project ${env.ACE_PROJECT} --compile-maps-and-schemas && \
                                 chmod -R 777 /src/generated-bars
                             "
                     """
@@ -43,8 +46,6 @@ def call(Map config) {
                         """.stripIndent()
 
                         writeFile file: 'Dockerfile', text: dockerfileContent
-
-                        // Direct docker command for reliability
                         sh "docker build -t ${env.APP_NAME}:latest ."
                     }
                 }
