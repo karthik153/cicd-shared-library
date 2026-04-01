@@ -11,18 +11,22 @@ def call(Map config) {
         }
 
         stages {
-            stage('1. Build ACE BAR') {
-                steps {
-                    // Hidden BAR build logic using your local v13 image
-                    sh """
-                        docker run --rm -v ${WORKSPACE}:/src ace:latest /bin/bash -c "
-                            source /opt/ibm/ace-13/server/bin/mqsiprofile && \
-                            mkdir -p /src/generated-bars && \
-                            ibmint package --input-path /src --output-bar-file /src/generated-bars/app.bar --project ${env.ACE_PROJECT}
-                        "
-                    """
-                }
-            }
+           // Inside vars/acev13Pipeline.groovy
+
+			stage('1. Build ACE BAR') {
+				steps {
+					sh """
+						docker run --rm \
+							-e LICENSE=accept \
+							-v ${WORKSPACE}:/src \
+							ace:latest /bin/bash -c "
+								source /opt/ibm/ace-13/server/bin/mqsiprofile && \
+								mkdir -p /src/generated-bars && \
+								ibmint package --input-path /src --output-bar-file /src/generated-bars/app.bar --project ${env.ACE_PROJECT}
+							"
+					"""
+				}
+			}
 
             stage('2. Build App Image') {
                 steps {
