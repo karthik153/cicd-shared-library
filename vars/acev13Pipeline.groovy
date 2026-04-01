@@ -10,7 +10,7 @@ def call(Map config) {
         }
 
         stages {
-            // Inside vars/acev13Pipeline.groovy
+            // Inside vars/acev13Pipeline.groovy in the shared library repo
 
 			stage('1. Build ACE BAR') {
 				steps {
@@ -23,7 +23,7 @@ def call(Map config) {
 							ace:latest /bin/bash -c "
 								source /opt/ibm/ace-13/server/bin/mqsiprofile && \
 								mkdir -p /src/generated-bars && \
-								ibmint package --input-path /src --output-bar-file /src/generated-bars/app.bar --project ${env.ACE_PROJECT} && \
+								ibmint package --input-path /src --output-bar-file /src/generated-bars/app.bar --all-projects && \
 								chmod -R 777 /src/generated-bars
 							"
 					"""
