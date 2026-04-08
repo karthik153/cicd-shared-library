@@ -22,7 +22,7 @@ def call(Map config) {
                     script {
                         sh """
                             # Start ephemeral builder
-                            docker run -d --name ${BUILD_CONT} -u root -e LICENSE=accept --entrypoint sleep ace:latest infinity
+                            docker run -d --name ${BUILD_CONT} -u root -e LICENSE=accept --entrypoint sleep ace_v13:latest infinity
 
                             # Copy source to builder
                             docker cp . ${BUILD_CONT}:/workspace
@@ -49,7 +49,7 @@ def call(Map config) {
                 steps {
                     script {
                         def dockerfileContent = """
-                            FROM ace:latest
+                            FROM ace_v13:latest
                             USER root
                             
                             # MUST set license at the top so it is available during the build
