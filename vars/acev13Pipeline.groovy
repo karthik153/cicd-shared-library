@@ -55,7 +55,7 @@ def call(Map config) {
                                 chmod -R 775 /home/aceuser/initial-config/bars
                             USER 1001
                             ENV LICENSE=accept
-                            EXPOSE 7800 9483
+                            EXPOSE 7800 7600
                         """.stripIndent()
 
                         writeFile file: 'Dockerfile', text: dockerfileContent
@@ -72,7 +72,7 @@ def call(Map config) {
                         docker run -d \
                             --name ${env.APP_NAME} \
                             -p ${env.HOST_PORT}:7800 \
-                            -p ${env.ADMIN_PORT}:9483 \
+                            -p ${env.ADMIN_PORT}:7600 \
                             -e LICENSE=accept \
                             ${env.APP_NAME}:latest
                     """
