@@ -4,29 +4,40 @@ def call(Map config) {
         
         environment {
             APP_NAME = "${config.appName}"
-            // Use the name passed from Jenkinsfile, or default to 'testapp'
-            ACE_PROJECT = "${config.aceProjectName ?: 'testapp'}"
+            // Use config value, default to 'test_app' if missing
+            ACE_PROJECT = "${config.aceProjectName ?: 'test_app'}"
             HOST_PORT = "${config.hostPort ?: '7800'}"
             ADMIN_PORT = "${config.adminPort ?: '9483'}"
+            BUILD_CONT = "ace-builder-${env.BUILD_ID}"
         }
 
         stages {
             stage('1. Build ACE BAR') {
                 steps {
-                    sh """
-                        docker run --rm \
-                            -u root \
-                            --entrypoint "" \
-                            -e LICENSE=accept \
-                            -v ${WORKSPACE}:/src \
-                            ace:latest /bin/bash -c "
-                                source /opt/ibm/ace-13/server/bin/mqsiprofile && \
-                                echo 'Checking workspace content:' && ls -F /src && \
-                                mkdir -p /src/generated-bars && \
-                                ibmint package --input-path /src --output-bar-file /src/generated-bars/app.bar --project ${env.ACE_PROJECT} --compile-maps-and-schemas && \
-                                chmod -R 777 /src/generated-bars
+                    script {
+                        sh """
+                            # 1. Start a container that stays alive (sleep)
+                            docker run -d --name ${BUILD_CONT} -u root --entrypoint sleep ace:latest infinity
+
+                            # 2. Copy EVERYTHING from the current Jenkins workspace into the container
+                            docker cp . ${BUILD_CONT}:/workspace
+
+                            # 3. Run the packaging command inside that container
+                            docker exec -u root ${BUILD_CONT} /bin/bash -c "
+                                source /opt/ibm/ace-13/server/bin/mqsiprofile &&
+                                mkdir -p /workspace/generated-bars &&
+                                ibmint package --input-path /workspace --output-bar-file /workspace/generated-bars/app.bar --project ${env.ACE_PROJECT} --compile-maps-and-schemas
                             "
-                    """
+
+                            # 4. Copy the BAR file back out to Jenkins
+                            mkdir -p generated-bars
+                            docker cp ${BUILD_CONT}:/workspace/generated-bars/app.bar ./generated-bars/app.bar
+
+                            # 5. Cleanup
+                            docker stop ${BUILD_CONT}
+                            docker rm ${BUILD_CONT}
+                        """
+                    }
                 }
             }
 
