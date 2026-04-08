@@ -4,57 +4,70 @@ def call(Map config) {
         
         environment {
             APP_NAME = "${config.appName}"
-            // Use config value, default to 'test_app' if missing
             ACE_PROJECT = "${config.aceProjectName ?: 'test_app'}"
             HOST_PORT = "${config.hostPort ?: '7800'}"
-            ADMIN_PORT = "${config.adminPort ?: '9483'}"
+            ADMIN_PORT = "${config.adminPort ?: '7600'}"
             BUILD_CONT = "ace-builder-${env.BUILD_ID}"
+            
+            // Get Short Git Commit ID (First 7 characters)
+            GIT_SHORT_ID = "${env.GIT_COMMIT[0..6]}"
+            
+            // Define the BAR file name dynamically
+            BAR_FILE_NAME = "${config.appName}_${env.GIT_SHORT_ID}.bar"
         }
 
         stages {
-            // Inside vars/acev13Pipeline.groovy in your shared library repo
+            stage('1. Build ACE BAR') {
+                steps {
+                    script {
+                        sh """
+                            # Start ephemeral builder
+                            docker run -d --name ${BUILD_CONT} -u root -e LICENSE=accept --entrypoint sleep ace:latest infinity
 
-			stage('1. Build ACE BAR') {
-				steps {
-					script {
-						sh """
-							# 1. Start the container with the LICENSE accepted
-							docker run -d --name ${BUILD_CONT} -u root -e LICENSE=accept --entrypoint sleep ace:latest infinity
+                            # Copy source to builder
+                            docker cp . ${BUILD_CONT}:/workspace
 
-							# 2. Copy code in
-							docker cp . ${BUILD_CONT}:/workspace
+                            # Package BAR with the new dynamic name
+                            docker exec -u root ${BUILD_CONT} /bin/bash -c "
+                                source /opt/ibm/ace-13/server/bin/mqsiprofile &&
+                                mkdir -p /workspace/generated-bars &&
+                                ibmint package --input-path /workspace --output-bar-file /workspace/generated-bars/${env.BAR_FILE_NAME} --project ${env.ACE_PROJECT} --compile-maps-and-schemas
+                            "
 
-							# 3. Run packaging
-							docker exec -u root ${BUILD_CONT} /bin/bash -c "
-								source /opt/ibm/ace-13/server/bin/mqsiprofile &&
-								mkdir -p /workspace/generated-bars &&
-								ibmint package --input-path /workspace --output-bar-file /workspace/generated-bars/app.bar --project ${env.ACE_PROJECT} --compile-maps-and-schemas
-							"
-
-							# 4. Copy BAR out
-							mkdir -p generated-bars
-							docker cp ${BUILD_CONT}:/workspace/generated-bars/app.bar ./generated-bars/app.bar
-
-							# 5. Cleanup
-							docker stop ${BUILD_CONT}
-							docker rm ${BUILD_CONT}
-						"""
-					}
-				}
-			}
+                            # Copy the specific BAR file back to Jenkins workspace
+                            mkdir -p generated-bars
+                            docker cp ${BUILD_CONT}:/workspace/generated-bars/${env.BAR_FILE_NAME} ./generated-bars/
+                            
+                            docker stop ${BUILD_CONT}
+                            docker rm ${BUILD_CONT}
+                        """
+                    }
+                }
+            }
 
             stage('2. Build App Image') {
                 steps {
                     script {
+                        // Generate Dockerfile referencing the dynamic BAR name
                         def dockerfileContent = """
                             FROM ace:latest
                             USER root
-                            RUN mkdir -p /home/aceuser/initial-config/bars
-                            COPY ./generated-bars/app.bar /home/aceuser/initial-config/bars/
-                            RUN chown -R 1001:0 /home/aceuser/initial-config/bars && \
-                                chmod -R 775 /home/aceuser/initial-config/bars
+                            
+                            RUN mqsiprofile && mqsicreateworkdir /home/aceuser/ace-server
+                            
+                            # Copy the specific BAR file
+                            COPY ./generated-bars/${env.BAR_FILE_NAME} /tmp/${env.BAR_FILE_NAME}
+                            
+                            # Deploy the specific BAR file
+                            RUN mqsiprofile && \\
+                                ibmint deploy --input-bar-file /tmp/${env.BAR_FILE_NAME} --output-work-directory /home/aceuser/ace-server
+                            
+                            RUN chown -R 1001:0 /home/aceuser/ace-server && \\
+                                chmod -R 775 /home/aceuser/ace-server
+                            
                             USER 1001
                             ENV LICENSE=accept
+                            CMD ["mqsiserver", "-w", "/home/aceuser/ace-server"]
                             EXPOSE 7800 7600
                         """.stripIndent()
 
