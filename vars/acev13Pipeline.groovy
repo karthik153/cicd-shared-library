@@ -48,18 +48,19 @@ def call(Map config) {
             stage('2. Build App Image') {
                 steps {
                     script {
-                        // Generate Dockerfile referencing the dynamic BAR name
                         def dockerfileContent = """
                             FROM ace:latest
                             USER root
                             
-                            RUN mqsiprofile && mqsicreateworkdir /home/aceuser/ace-server
+                            # Use absolute path to source mqsiprofile
+                            RUN . /opt/ibm/ace-13/server/bin/mqsiprofile && \\
+                                mqsicreateworkdir /home/aceuser/ace-server
                             
                             # Copy the specific BAR file
                             COPY ./generated-bars/${env.BAR_FILE_NAME} /tmp/${env.BAR_FILE_NAME}
                             
-                            # Deploy the specific BAR file
-                            RUN mqsiprofile && \\
+                            # Use absolute path to source mqsiprofile for deployment
+                            RUN . /opt/ibm/ace-13/server/bin/mqsiprofile && \\
                                 ibmint deploy --input-bar-file /tmp/${env.BAR_FILE_NAME} --output-work-directory /home/aceuser/ace-server
                             
                             RUN chown -R 1001:0 /home/aceuser/ace-server && \\
@@ -67,7 +68,10 @@ def call(Map config) {
                             
                             USER 1001
                             ENV LICENSE=accept
-                            CMD ["mqsiserver", "-w", "/home/aceuser/ace-server"]
+                            
+                            # Ensure the server starts with the work directory
+                            CMD ["/opt/ibm/ace-13/server/bin/mqsiserver", "-w", "/home/aceuser/ace-server"]
+                            
                             EXPOSE 7800 7600
                         """.stripIndent()
 
