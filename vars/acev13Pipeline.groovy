@@ -52,24 +52,26 @@ def call(Map config) {
                             FROM ace:latest
                             USER root
                             
-                            # Use absolute path to source mqsiprofile
+                            # MUST set license at the top so it is available during the build
+                            ENV LICENSE=accept
+                            
+                            # Create work directory
                             RUN . /opt/ibm/ace-13/server/bin/mqsiprofile && \\
                                 mqsicreateworkdir /home/aceuser/ace-server
                             
-                            # Copy the specific BAR file
+                            # Copy and Deploy the BAR file
                             COPY ./generated-bars/${env.BAR_FILE_NAME} /tmp/${env.BAR_FILE_NAME}
                             
-                            # Use absolute path to source mqsiprofile for deployment
                             RUN . /opt/ibm/ace-13/server/bin/mqsiprofile && \\
                                 ibmint deploy --input-bar-file /tmp/${env.BAR_FILE_NAME} --output-work-directory /home/aceuser/ace-server
                             
+                            # Set permissions
                             RUN chown -R 1001:0 /home/aceuser/ace-server && \\
                                 chmod -R 775 /home/aceuser/ace-server
                             
                             USER 1001
-                            ENV LICENSE=accept
                             
-                            # Ensure the server starts with the work directory
+                            # Start server using the work directory
                             CMD ["/opt/ibm/ace-13/server/bin/mqsiserver", "-w", "/home/aceuser/ace-server"]
                             
                             EXPOSE 7800 7600
