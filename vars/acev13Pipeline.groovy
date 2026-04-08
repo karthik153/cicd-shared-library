@@ -12,34 +12,36 @@ def call(Map config) {
         }
 
         stages {
-            stage('1. Build ACE BAR') {
-                steps {
-                    script {
-                        sh """
-                            # 1. Start a container that stays alive (sleep)
-                            docker run -d --name ${BUILD_CONT} -u root --entrypoint sleep ace:latest infinity
+            // Inside vars/acev13Pipeline.groovy in your shared library repo
 
-                            # 2. Copy EVERYTHING from the current Jenkins workspace into the container
-                            docker cp . ${BUILD_CONT}:/workspace
+			stage('1. Build ACE BAR') {
+				steps {
+					script {
+						sh """
+							# 1. Start the container with the LICENSE accepted
+							docker run -d --name ${BUILD_CONT} -u root -e LICENSE=accept --entrypoint sleep ace:latest infinity
 
-                            # 3. Run the packaging command inside that container
-                            docker exec -u root ${BUILD_CONT} /bin/bash -c "
-                                source /opt/ibm/ace-13/server/bin/mqsiprofile &&
-                                mkdir -p /workspace/generated-bars &&
-                                ibmint package --input-path /workspace --output-bar-file /workspace/generated-bars/app.bar --project ${env.ACE_PROJECT} --compile-maps-and-schemas
-                            "
+							# 2. Copy code in
+							docker cp . ${BUILD_CONT}:/workspace
 
-                            # 4. Copy the BAR file back out to Jenkins
-                            mkdir -p generated-bars
-                            docker cp ${BUILD_CONT}:/workspace/generated-bars/app.bar ./generated-bars/app.bar
+							# 3. Run packaging
+							docker exec -u root ${BUILD_CONT} /bin/bash -c "
+								source /opt/ibm/ace-13/server/bin/mqsiprofile &&
+								mkdir -p /workspace/generated-bars &&
+								ibmint package --input-path /workspace --output-bar-file /workspace/generated-bars/app.bar --project ${env.ACE_PROJECT} --compile-maps-and-schemas
+							"
 
-                            # 5. Cleanup
-                            docker stop ${BUILD_CONT}
-                            docker rm ${BUILD_CONT}
-                        """
-                    }
-                }
-            }
+							# 4. Copy BAR out
+							mkdir -p generated-bars
+							docker cp ${BUILD_CONT}:/workspace/generated-bars/app.bar ./generated-bars/app.bar
+
+							# 5. Cleanup
+							docker stop ${BUILD_CONT}
+							docker rm ${BUILD_CONT}
+						"""
+					}
+				}
+			}
 
             stage('2. Build App Image') {
                 steps {
