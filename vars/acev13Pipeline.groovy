@@ -8,8 +8,8 @@ def call(Map params = [:]) {
             IMAGE_NAME    = "${params.imageName ?: 'ace-app'}"
             HOST_PORT     = "${params.hostPort ?: '7800'}"
             
-            // NEXUS CONFIGURATION
-            REGISTRY_URL  = "localhost:5000" 
+            // Use 'host.docker.internal' so the Jenkins container can see the Nexus container on your Windows host
+            REGISTRY_URL  = "host.docker.internal:5000" 
             FULL_IMAGE    = "${env.REGISTRY_URL}/${env.IMAGE_NAME}"
             
             TAG           = "v${env.BUILD_NUMBER}"
@@ -46,22 +46,22 @@ def call(Map params = [:]) {
 
             stage('Docker Build & Push') {
                 steps {
-                    script {
-                        echo "Packaging and Pushing to Nexus..."
-                        
-                        // 1. Get Dockerfile from Shared Library resources
-                        def dockerfileContent = libraryResource 'Dockerfile.ace-generic'
-                        writeFile file: 'Dockerfile', text: dockerfileContent
+                    // We use withCredentials to pull the username/password from Jenkins safely
+                    withCredentials([usernamePassword(credentialsId: 'nexus-creds', passwordVariable: 'NEXUS_PWD', usernameVariable: 'NEXUS_USER')]) {
+                        script {
+                            echo "Packaging and Pushing to Nexus..."
+                            
+                            def dockerfileContent = libraryResource 'Dockerfile.ace-generic'
+                            writeFile file: 'Dockerfile', text: dockerfileContent
 
-                        // 2. Build the image with the Nexus Registry name
-                        sh "docker build --build-arg BAR_FILE=${env.BAR_NAME} -t ${env.FULL_IMAGE}:${env.TAG} ."
-                        sh "docker tag ${env.FULL_IMAGE}:${env.TAG} ${env.FULL_IMAGE}:latest"
+                            sh "docker build --build-arg BAR_FILE=${env.BAR_NAME} -t ${env.FULL_IMAGE}:${env.TAG} ."
+                            sh "docker tag ${env.FULL_IMAGE}:${env.TAG} ${env.FULL_IMAGE}:latest"
 
-                        // 3. Login and Push (using the credentials we created in Step 1)
-                        // This handles the 'docker login' and 'docker push' automatically
-                        docker.withRegistry("http://${env.REGISTRY_URL}", "nexus-creds") {
-                            docker.image("${env.FULL_IMAGE}:${env.TAG}").push()
-                            docker.image("${env.FULL_IMAGE}:${env.TAG}").push("latest")
+                            // Manual login and push via shell
+                            sh "echo \$NEXUS_PWD | docker login ${env.REGISTRY_URL} -u \$NEXUS_USER --password-stdin"
+                            sh "docker push ${env.FULL_IMAGE}:${env.TAG}"
+                            sh "docker push ${env.FULL_IMAGE}:latest"
+                            sh "docker logout ${env.REGISTRY_URL}"
                         }
                     }
                 }
@@ -71,11 +71,9 @@ def call(Map params = [:]) {
                 steps {
                     script {
                         echo "Deploying from Nexus to Port: ${env.HOST_PORT}"
-                        
-                        // Stop old container
                         sh "docker rm -f ${env.APP_NAME} || true"
-                        
-                        // Run using the image we just pushed to Nexus
+                        // Pull from Nexus first to ensure we have the right version
+                        sh "docker pull ${env.FULL_IMAGE}:${env.TAG}"
                         sh """
                             docker run -d --name ${env.APP_NAME} \
                             -p ${env.HOST_PORT}:7800 -p 7600:7600 \
