@@ -1,13 +1,13 @@
-def call(Map pipelineParams) {
+def call(Map params = [:]) {
     pipeline {
         agent any
 
         environment {
-            // Mapping these EXACTLY to your Jenkinsfile keys
-            APP_NAME    = "${pipelineParams.appName}"
-            BAR_NAME    = "${pipelineParams.barName}"
-            IMAGE_NAME  = "${pipelineParams.imageName}"
-            HOST_PORT   = "${pipelineParams.hostPort}" 
+            // Use params.get to ensure we don't get 'null'
+            APP_NAME    = "${params.get('appName', 'test-app')}"
+            BAR_NAME    = "${params.get('barName', 'test.bar')}"
+            IMAGE_NAME  = "${params.get('imageName', 'ace-app')}"
+            HOST_PORT   = "${params.get('hostPort', '7800')}"
             
             TAG         = "build-${env.BUILD_NUMBER}"
             ACE_IMAGE   = "ace_v13:latest"
@@ -24,21 +24,22 @@ def call(Map pipelineParams) {
             stage('Build ACE BAR') {
                 steps {
                     echo "Building BAR: ${env.BAR_NAME} for App: ${env.APP_NAME}"
-                    // Using -e LICENSE=accept so the mqsicreatebar tool can run
+                    
+                    // --entrypoint "" is the secret to stopping the server and running mqsicreatebar
                     sh """
                         docker run --rm -u root \
                             -e LICENSE=accept \
+                            --entrypoint "" \
                             -v "${WORKSPACE}:/workspace" -w /workspace \
                             ${env.ACE_IMAGE} \
-                            bash -c ". /opt/ibm/ace-13/server/bin/mqsiprofile && mqsicreatebar -data . -b ${env.BAR_NAME} -a ${env.APP_NAME}"
+                            /bin/bash -c ". /opt/ibm/ace-13/server/bin/mqsiprofile && mqsicreatebar -data . -b ${env.BAR_NAME} -a ${env.APP_NAME}"
                     """
                 }
             }
 
             stage('Docker Build') {
                 steps {
-                    echo "Packaging Final Image: ${env.IMAGE_NAME}:${env.TAG}"
-                    // Passing the BAR_NAME as a build-arg to your Dockerfile
+                    echo "Packaging Image: ${env.IMAGE_NAME}:${env.TAG}"
                     sh "docker build --build-arg BAR_FILE=${env.BAR_NAME} -t ${env.IMAGE_NAME}:${env.TAG} ."
                     sh "docker tag ${env.IMAGE_NAME}:${env.TAG} ${env.IMAGE_NAME}:latest"
                 }
@@ -65,7 +66,7 @@ def call(Map pipelineParams) {
                 echo "SUCCESS: ${env.APP_NAME} is live at http://localhost:${env.HOST_PORT}"
             }
             failure {
-                echo "FAILURE: Check the Jenkins console logs for errors."
+                echo "FAILURE: Pipeline failed. Check the logs above."
             }
         }
     }
