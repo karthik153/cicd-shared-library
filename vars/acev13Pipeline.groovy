@@ -3,11 +3,11 @@ def call(Map params = [:]) {
         agent any
 
         environment {
-            // Use params.get to ensure we don't get 'null'
-            APP_NAME    = "${params.get('appName', 'test-app')}"
-            BAR_NAME    = "${params.get('barName', 'test.bar')}"
-            IMAGE_NAME  = "${params.get('imageName', 'ace-app')}"
-            HOST_PORT   = "${params.get('hostPort', '7800')}"
+            // Using the 'params' map passed from the Jenkinsfile
+            APP_NAME    = "${params.appName ?: 'test-app'}"
+            BAR_NAME    = "${params.barName ?: 'test.bar'}"
+            IMAGE_NAME  = "${params.imageName ?: 'ace-app'}"
+            HOST_PORT   = "${params.hostPort ?: '7800'}"
             
             TAG         = "build-${env.BUILD_NUMBER}"
             ACE_IMAGE   = "ace_v13:latest"
@@ -25,7 +25,7 @@ def call(Map params = [:]) {
                 steps {
                     echo "Building BAR: ${env.BAR_NAME} for App: ${env.APP_NAME}"
                     
-                    // --entrypoint "" is the secret to stopping the server and running mqsicreatebar
+                    // FIX: We wrap the ENTIRE command in double quotes so bash treats it as one instruction
                     sh """
                         docker run --rm -u root \
                             -e LICENSE=accept \
@@ -39,7 +39,7 @@ def call(Map params = [:]) {
 
             stage('Docker Build') {
                 steps {
-                    echo "Packaging Image: ${env.IMAGE_NAME}:${env.TAG}"
+                    echo "Packaging Final Image: ${env.IMAGE_NAME}:${env.TAG}"
                     sh "docker build --build-arg BAR_FILE=${env.BAR_NAME} -t ${env.IMAGE_NAME}:${env.TAG} ."
                     sh "docker tag ${env.IMAGE_NAME}:${env.TAG} ${env.IMAGE_NAME}:latest"
                 }
