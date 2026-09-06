@@ -69,17 +69,31 @@ def call(Map params = [:]) {
 
             stage('Deploy (CD)') {
                 steps {
-                    script {
-                        echo "Deploying from Nexus to Port: ${env.HOST_PORT}"
-                        sh "docker rm -f ${env.APP_NAME} || true"
-                        // Pull from Nexus first to ensure we have the right version
-                        sh "docker pull ${env.FULL_IMAGE}:${env.TAG}"
-                        sh """
-                            docker run -d --name ${env.APP_NAME} \
-                            -p ${env.HOST_PORT}:7800 -p 7600:7600 \
-                            -e LICENSE=accept \
-                            ${env.FULL_IMAGE}:${env.TAG}
-                        """
+                    // We need credentials here to PULL from the private registry
+                    withCredentials([usernamePassword(credentialsId: 'nexus-creds', passwordVariable: 'NEXUS_PWD', usernameVariable: 'NEXUS_USER')]) {
+                        script {
+                            echo "Deploying from Nexus to Port: ${env.HOST_PORT}"
+                            
+                            // 1. Log back in to allow the pull
+                            sh "echo \$NEXUS_PWD | docker login ${env.REGISTRY_URL} -u \$NEXUS_USER --password-stdin"
+                            
+                            // 2. Pull the specific version we just built
+                            sh "docker pull ${env.FULL_IMAGE}:${env.TAG}"
+                            
+                            // 3. Stop old container (idempotency)
+                            sh "docker rm -f ${env.APP_NAME} || true"
+                            
+                            // 4. Run the new container
+                            sh """
+                                docker run -d --name ${env.APP_NAME} \
+                                -p ${env.HOST_PORT}:7800 -p 7600:7600 \
+                                -e LICENSE=accept \
+                                ${env.FULL_IMAGE}:${env.TAG}
+                            """
+                            
+                            // 5. Cleanup session
+                            sh "docker logout ${env.REGISTRY_URL}"
+                        }
                     }
                 }
             }
