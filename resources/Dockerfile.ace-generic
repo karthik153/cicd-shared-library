@@ -1,12 +1,29 @@
 FROM ace_v13:latest
+
 ARG BAR_FILE
 ENV BAR_NAME=${BAR_FILE}
 ENV LICENSE=accept
+
 USER root
-RUN mkdir -p /home/aceuser/bars /home/aceuser/ace-server && chown -R aceuser:aceuser /home/aceuser/
+
+# 1. Create directories and ensure they are clean
+RUN mkdir -p /home/aceuser/bars /home/aceuser/ace-server && \
+    chown -R aceuser:aceuser /home/aceuser/
+
+# 2. Copy the BAR
 COPY --chown=aceuser:aceuser ${BAR_NAME} /home/aceuser/bars/
+
+# 3. Unpack the BAR (Done as root to allow registry access)
 RUN . /opt/ibm/ace-13/server/bin/mqsiprofile && \
     mqsibar -w /home/aceuser/ace-server -a /home/aceuser/bars/${BAR_NAME} -c
+
+# --- CRITICAL FIX START ---
+# 4. Change ownership of the EXTRATED files back to aceuser
+RUN chown -R aceuser:aceuser /home/aceuser/ace-server
+# --- CRITICAL FIX END ---
+
 USER aceuser
+
 EXPOSE 7800 7600
+
 CMD ["IntegrationServer", "--name", "ACEServer", "--work-dir", "/home/aceuser/ace-server"]
