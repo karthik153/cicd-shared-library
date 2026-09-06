@@ -47,9 +47,16 @@ def call(Map params = [:]) {
 
             stage('Docker Build') {
                 steps {
-                    echo "Packaging Image: ${env.IMAGE_NAME}:${env.TAG}"
-                    sh "docker build --build-arg BAR_FILE=${env.BAR_NAME} -t ${env.IMAGE_NAME}:${env.TAG} ."
-                    sh "docker tag ${env.IMAGE_NAME}:${env.TAG} ${env.IMAGE_NAME}:latest"
+                    script {
+                        echo "Packaging Image: ${env.IMAGE_NAME}:${env.TAG}"
+                        writeFile file: 'Dockerfile.ace-generic', text: libraryResource('Dockerfile.ace-generic')
+                        sh """
+                            mkdir -p generated-bars
+                            cp '${env.BAR_NAME}' 'generated-bars/${env.BAR_NAME}'
+                            docker build -f Dockerfile.ace-generic --build-arg BAR_FILE='${env.BAR_NAME}' -t ${env.IMAGE_NAME}:${env.TAG} .
+                        """
+                        sh "docker tag ${env.IMAGE_NAME}:${env.TAG} ${env.IMAGE_NAME}:latest"
+                    }
                 }
             }
 
