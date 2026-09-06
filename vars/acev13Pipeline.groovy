@@ -29,17 +29,17 @@ def call(Map params = [:]) {
                         sh """
                             set -e
                             BUILDER_CONTAINER="ace-bar-builder-${env.BUILD_NUMBER}"
-                            trap 'docker rm -f "$BUILDER_CONTAINER" >/dev/null 2>&1 || true' EXIT
-                            docker create --name "$BUILDER_CONTAINER" -u root \
+                            trap 'docker rm -f "\$BUILDER_CONTAINER" >/dev/null 2>&1 || true' EXIT
+                            docker create --name "\$BUILDER_CONTAINER" -u root \
                                 -e LICENSE=accept \
                                 --entrypoint "/bin/bash" \
                                 ${env.ACE_IMAGE} \
                                 -c "while true; do sleep 3600; done" >/dev/null
-                            docker start "$BUILDER_CONTAINER" >/dev/null
-                            docker exec "$BUILDER_CONTAINER" mkdir -p /workspace
-                            docker cp "${env.APP_NAME}" "$BUILDER_CONTAINER:/workspace/"
-                            docker exec -w /workspace "$BUILDER_CONTAINER" /bin/bash -lc "source /opt/ibm/ace-13/server/bin/mqsiprofile && ibmint package --input-path './${env.APP_NAME}' --output-bar-file '${env.BAR_NAME}' --project '${env.APP_NAME}'"
-                            docker cp "$BUILDER_CONTAINER:/workspace/${env.BAR_NAME}" "${env.BAR_NAME}"
+                            docker start "\$BUILDER_CONTAINER" >/dev/null
+                            docker exec "\$BUILDER_CONTAINER" mkdir -p /workspace
+                            docker cp "${env.APP_NAME}" "\$BUILDER_CONTAINER:/workspace/"
+                            docker exec -w /workspace "\$BUILDER_CONTAINER" /bin/bash -lc "source /opt/ibm/ace-13/server/bin/mqsiprofile && ibmint package --input-path './${env.APP_NAME}' --output-bar-file '${env.BAR_NAME}' --project '${env.APP_NAME}'"
+                            docker cp "\$BUILDER_CONTAINER:/workspace/${env.BAR_NAME}" "${env.BAR_NAME}"
                         """
                     }
                 }
