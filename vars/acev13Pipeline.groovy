@@ -1,13 +1,13 @@
-def call(Map pipelineParams = [:]) {
+def call(Map params = [:]) {
     pipeline {
         agent any
 
         environment {
-            // Using a very explicit way to extract parameters from the Jenkinsfile call
-            APP_NAME    = "${pipelineParams.appName ?: 'test-app'}"
-            BAR_NAME    = "${pipelineParams.barName ?: 'test.bar'}"
-            IMAGE_NAME  = "${pipelineParams.imageName ?: 'ace-app'}"
-            HOST_PORT   = "${pipelineParams.hostPort ?: '7800'}"
+            // Use 'params' directly from the function argument
+            APP_NAME    = "${params.appName ?: 'test-app'}"
+            BAR_NAME    = "${params.barName ?: 'test.bar'}"
+            IMAGE_NAME  = "${params.imageName ?: 'ace-app'}"
+            HOST_PORT   = "${params.hostPort ?: '7800'}"
             
             TAG         = "build-${env.BUILD_NUMBER}"
             ACE_IMAGE   = "ace_v13:latest"
@@ -26,15 +26,15 @@ def call(Map pipelineParams = [:]) {
                     script {
                         echo "Building BAR: ${env.BAR_NAME} for App: ${env.APP_NAME}"
                         
-                        // We use escaped single quotes (\') to ensure the ENTIRE command 
-                        // string reaches the container's bash -c
+                        // We wrap the bash command in escaped single quotes (\') 
+                        // This ensures the entire string is passed to the container
                         sh """
                             docker run --rm -u root \
                                 -e LICENSE=accept \
-                                --entrypoint "" \
+                                --entrypoint "/bin/bash" \
                                 -v "${WORKSPACE}:/workspace" -w /workspace \
                                 ${env.ACE_IMAGE} \
-                                /bin/bash -c '. /opt/ibm/ace-13/server/bin/mqsiprofile && mqsicreatebar -data . -b ${env.BAR_NAME} -a ${env.APP_NAME}'
+                                -c ". /opt/ibm/ace-13/server/bin/mqsiprofile && mqsicreatebar -data . -b ${env.BAR_NAME} -a ${env.APP_NAME}"
                         """
                     }
                 }
