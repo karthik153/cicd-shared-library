@@ -26,15 +26,13 @@ def call(Map params = [:]) {
                     script {
                         echo "Building BAR: ${env.BAR_NAME} for App: ${env.APP_NAME}"
                         
-                        // We wrap the bash command in escaped single quotes (\') 
-                        // This ensures the entire string is passed to the container
                         sh """
                             docker run --rm -u root \
                                 -e LICENSE=accept \
                                 --entrypoint "/bin/bash" \
                                 -v "${WORKSPACE}:/workspace" -w /workspace \
                                 ${env.ACE_IMAGE} \
-                                -c ". /opt/ibm/ace-13/server/bin/mqsiprofile && mqsicreatebar -data . -b ${env.BAR_NAME} -a ${env.APP_NAME}"
+                                -c "source /opt/ibm/ace-13/server/bin/mqsiprofile && ibmint package --input-path . --output-bar-file '${env.BAR_NAME}' --project '${env.APP_NAME}'"
                         """
                     }
                 }

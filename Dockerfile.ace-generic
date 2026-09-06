@@ -21,14 +21,14 @@ ARG BAR_FILE
 COPY generated-bars/${BAR_FILE} /home/aceuser/bars/
 
 # Create work directory first (must exist before mqsibar)
-RUN source /opt/ibm/ace-13/server/bin/mqsiprofile && \
+RUN . /opt/ibm/ace-13/server/bin/mqsiprofile && \
     mqsicreateworkdir /home/aceuser/ace-server
 
 # Extract and configure the BAR file using mqsibar command
 # -w: working directory for the integration server
 # -a: archive (BAR file) to deploy  
 # -c: compile the configuration
-RUN source /opt/ibm/ace-13/server/bin/mqsiprofile && \
+RUN . /opt/ibm/ace-13/server/bin/mqsiprofile && \
     mqsibar -w /home/aceuser/ace-server -a /home/aceuser/bars/${BAR_FILE} -c
 
 # Set proper permissions for the work directory
