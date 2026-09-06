@@ -1,0 +1,35 @@
+{
+  "description": "ACE Container Port Registry - Maps container names to their allocated ports",
+  "baseFlowPort": 7800,
+  "baseAdminPort": 7600,
+  "maxContainers": 50,
+  "portSpacing": 2,
+  "allocations": {
+    "example": {
+      "hostFlowPort": 7800,
+      "hostAdminPort": 7600,
+      "containerFlowPort": 7800,
+      "containerAdminPort": 7600,
+      "allocatedAt": "2026-09-05T00:00:00Z",
+      "jobName": "example-job",
+      "buildNumber": 1
+    }
+  },
+  "environments": {
+    "dev": {
+      "baseFlowPort": 7800,
+      "baseAdminPort": 7600,
+      "portRange": "7800-7900"
+    },
+    "test": {
+      "baseFlowPort": 8000,
+      "baseAdminPort": 8100,
+      "portRange": "8000-8100"
+    },
+    "staging": {
+      "baseFlowPort": 8200,
+      "baseAdminPort": 8300,
+      "portRange": "8200-8300"
+    }
+  }
+}

@@ -7,67 +7,85 @@ pipeline {
     stages {
         stage('1. Checkout ACE App Repo') {
             steps {
-                // Instead of nuking the whole workspace, just enter the 'app-src' folder and wipe only that folder!
                 dir('app-src') {
-                    deleteDir() 
+                    deleteDir()
                     git url: "${params.APP_GIT_URL}", branch: "${params.APP_BRANCH}", credentialsId: 'github-creds'
                 }
             }
         }
+
         stage('2. Read App Configuration') {
             steps {
                 script {
                     def config = readJSON file: "app-src/pipeline-config.json"
+
                     env.APP_NAME = config.appName
-                    // Fix: Force lowercase exclusively for Docker naming rules!
-                    env.IMAGE_NAME = config.appName.toLowerCase() 
-                    
+                    env.IMAGE_NAME = config.appName.toLowerCase()
+                    env.ENVIRONMENT = config.environment ?: 'dev'
+                    env.BAR_FILE = "${config.appName}.bar"
+
                     env.REQUIRES_MQ = config.dependencies.mq
                     env.REQUIRES_REDIS = config.dependencies.redis
                     env.REQUIRES_CREDS = config.requiresDbParms
                 }
             }
         }
+
         stage('3. Configure MQ/DB Passwords') {
             when { expression { env.REQUIRES_CREDS == 'true' } }
             steps {
                 withCredentials([usernamePassword(credentialsId: 'DB_CRED', passwordVariable: 'DB_PWD', usernameVariable: 'DB_USER')]) {
                     script {
                         sh "echo 'odbc::myDB ${DB_USER} ${DB_PWD}' > setdbparms.txt"
-                        sh "echo 'redis::myRedis serverName::${DB_PWD}' >> setdbparms.txt" 
+                        sh "echo 'redis::myRedis serverName::${DB_PWD}' >> setdbparms.txt"
                     }
                 }
             }
         }
+
         stage('4. Build Target Container') {
             steps {
                 script {
-                    // Fix: Passes standard Case-Sensitive APP_NAME to mqsicreatebar, 
-                    // but uses lowercase IMAGE_NAME for tagging the Docker container.
-                    sh "docker build -f Dockerfile.ace-generic --build-arg APP_NAME=${env.APP_NAME} -t app-ace-${env.IMAGE_NAME}:latest ."
+                    sh "docker build -f Dockerfile.ace-generic --build-arg BAR_FILE=${env.BAR_FILE} -t app-ace-${env.IMAGE_NAME}:latest ."
                 }
             }
         }
+
         stage('5. Run Standardized ACE Container') {
-			steps {
-				script {
-					def runCmd = "docker run -d --name run-ace-${env.IMAGE_NAME} "
+            steps {
+                script {
+                    def portRegistry = load 'vars/portRegistry.groovy'
+                    def environment = env.ENVIRONMENT ?: 'dev'
+                    def ports = portRegistry.allocatePort(env.IMAGE_NAME, environment, env.BUILD_NUMBER)
 
-					// Add port mappings for ACE Admin API and flows
-					runCmd += "-p 7600:7600 "   // Admin REST API
-					runCmd += "-p 7800:7800 "   // Example flow HTTP Input port
+                    env.CONTAINER_HOST_PORT = ports.hostFlowPort.toString()
+                    env.CONTAINER_ADMIN_PORT = ports.hostAdminPort.toString()
+                    env.PORT_KEY = ports.key
+                    env.CONTAINER_NAME = "ace-${env.IMAGE_NAME}-${env.BUILD_NUMBER}"
 
-					if (env.REQUIRES_MQ == 'true') { runCmd += "--network mq-net " }
-					if (env.REQUIRES_REDIS == 'true') { runCmd += "--network redis-net " }
-					if (env.REQUIRES_CREDS == 'true') {
-						runCmd += "-v ${WORKSPACE}/setdbparms.txt:/home/aceuser/initial-config/setdbparms/setdbparms.txt:ro "
-					}
-					runCmd += "app-ace-${env.IMAGE_NAME}:latest"
+                    echo "Starting ACE container: ${env.CONTAINER_NAME}"
+                    echo "Environment: ${environment}"
+                    echo "Allocated ports: Flow=${env.CONTAINER_HOST_PORT}:7800, Admin=${env.CONTAINER_ADMIN_PORT}:7600"
 
-					sh "docker rm -f run-ace-${env.IMAGE_NAME} || true"
-					sh "${runCmd}"
-				}
-			}
-		}
+                    def runCmd = "docker run -d --name ${env.CONTAINER_NAME} "
+                    runCmd += "-p ${env.CONTAINER_ADMIN_PORT}:7600 "
+                    runCmd += "-p ${env.CONTAINER_HOST_PORT}:7800 "
+                    runCmd += "-l app=${env.IMAGE_NAME} "
+                    runCmd += "-l build=${env.BUILD_NUMBER} "
+                    runCmd += "-l jenkins_job=${env.JOB_NAME} "
+
+                    if (env.REQUIRES_MQ == 'true') { runCmd += "--network mq-net " }
+                    if (env.REQUIRES_REDIS == 'true') { runCmd += "--network redis-net " }
+                    if (env.REQUIRES_CREDS == 'true') {
+                        runCmd += "-v ${WORKSPACE}/setdbparms.txt:/home/aceuser/initial-config/setdbparms/setdbparms.txt:ro "
+                    }
+                    runCmd += "app-ace-${env.IMAGE_NAME}:latest"
+
+                    sh "docker rm -f ${env.CONTAINER_NAME} || true"
+                    sh "${runCmd}"
+                    sh "docker ps --filter 'name=${env.CONTAINER_NAME}' | grep ${env.CONTAINER_NAME} || exit 1"
+                }
+            }
+        }
     }
 }

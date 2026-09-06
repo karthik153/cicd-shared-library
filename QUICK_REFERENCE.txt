@@ -1,0 +1,184 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                    ACE LOCAL BUILDER - QUICK REFERENCE                          ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+🚀 QUICK START (5 seconds)
+─────────────────────────────────────────────────────────────────────────────────
+
+Windows (PowerShell):
+  .\build-ace-local.ps1 -BarFilePath "C:\Users\YourUser\Documents\myapp.bar"
+
+Linux/Mac (Bash):
+  ./build-ace-local.sh -b /home/user/myapp.bar
+
+
+📝 COMMON COMMANDS
+─────────────────────────────────────────────────────────────────────────────────
+
+Build and Run (Default - Automatic)
+  PowerShell: .\build-ace-local.ps1 -BarFilePath "C:\path\to\app.bar"
+  Bash:       ./build-ace-local.sh -b /path/to/app.bar
+
+Build Only (No Auto-Run)
+  PowerShell: .\build-ace-local.ps1 -BarFilePath "C:\path\to\app.bar" -RunContainer $false
+  Bash:       ./build-ace-local.sh -b /path/to/app.bar -r false
+
+Test Environment (Different Port Range)
+  PowerShell: .\build-ace-local.ps1 -BarFilePath "C:\path\to\app.bar" -Environment test
+  Bash:       ./build-ace-local.sh -b /path/to/app.bar -e test
+
+Custom Container Name
+  PowerShell: .\build-ace-local.ps1 -BarFilePath "C:\path\to\app.bar" -ContainerName myapp-v1
+  Bash:       ./build-ace-local.sh -b /path/to/app.bar -c myapp-v1
+
+
+🌍 ENVIRONMENTS & PORTS
+─────────────────────────────────────────────────────────────────────────────────
+
+  Environment   | Flow Ports    | Admin Ports   | Use Case
+  ─────────────────────────────────────────────────────────────────────
+  dev           | 7800-7900     | 7600-7700     | Local development
+  test          | 8000-8100     | 8100-8200     | Testing (parallel builds)
+  staging       | 8200-8300     | 8300-8400     | Staging environment
+
+
+🧪 TESTING YOUR CONTAINER
+─────────────────────────────────────────────────────────────────────────────────
+
+Check Logs:
+  docker logs -f ace-myapp-180530
+
+Test Flow Endpoint (if configured):
+  curl http://localhost:7800/your-flow-path
+
+Check Admin API:
+  curl http://localhost:7600/v1/integrationServers
+
+View Metrics:
+  docker stats ace-myapp-180530
+
+Stop Container:
+  docker stop ace-myapp-180530
+
+Remove Container:
+  docker rm ace-myapp-180530
+
+
+📊 CONTAINER MANAGEMENT
+─────────────────────────────────────────────────────────────────────────────────
+
+List All Local Build Containers:
+  docker ps --filter "label=local_build=true"
+
+Find Container by Environment:
+  docker ps --filter "label=environment=dev"
+
+Find Container by App Name:
+  docker ps --filter "label=app=myapp"
+
+
+🔧 TROUBLESHOOTING
+─────────────────────────────────────────────────────────────────────────────────
+
+❌ "BAR file not found"
+   → Use full path (C:\Users\...\file.bar, not relative paths)
+   → Check file exists: dir C:\path\to\file.bar
+
+❌ "Port already in use"
+   → Use different environment: -Environment test
+   → Stop conflicting container: docker stop container-name
+
+❌ Container won't start
+   → Check logs: docker logs ace-myapp-xxxxx
+   → Verify Docker is running: docker ps
+   → Check Dockerfile exists: dir Dockerfile.ace-generic
+
+❌ "Dockerfile.ace-generic not found"
+   → Script must be in same directory as Dockerfile
+   → Current location: cicd-shared-library/
+
+
+📍 FILE LOCATIONS
+─────────────────────────────────────────────────────────────────────────────────
+
+Scripts Location:
+  c:\D_drive\IBM ACE\cicd-shared-library\
+
+BAR Files Copied To:
+  c:\D_drive\IBM ACE\cicd-shared-library\generated-bars\
+
+Port Registry (if using):
+  c:\D_drive\IBM ACE\cicd-shared-library\port-registry.json
+
+Documentation:
+  c:\D_drive\IBM ACE\cicd-shared-library\BUILD_ACE_LOCAL_README.md
+
+
+💡 TIPS
+─────────────────────────────────────────────────────────────────────────────────
+
+Tip 1: Run Multiple Versions Simultaneously
+  • Dev:     .\build-ace-local.ps1 -BarFilePath app.bar -Environment dev
+  • Test:    .\build-ace-local.ps1 -BarFilePath app.bar -Environment test
+  Both run at same time on different ports!
+
+Tip 2: Custom Container Naming
+  Give meaningful names for production-like testing:
+  -ContainerName my-payment-service-v2 (PowerShell)
+  -c my-payment-service-v2 (Bash)
+
+Tip 3: Keep Terminal Open for Logs
+  Start script, keep terminal open to see live logs of container startup
+
+Tip 4: Use Absolute Paths
+  Always use full paths (C:\... on Windows, /home/... on Linux)
+  Don't use relative paths like .\file.bar
+
+Tip 5: Check Port Availability
+  Windows: netstat -ano | findstr :7800
+  Linux:   lsof -i :7800
+
+
+✅ WORKFLOW
+─────────────────────────────────────────────────────────────────────────────────
+
+1. Run Script
+   .\build-ace-local.ps1 -BarFilePath "C:\path\to\myapp.bar"
+
+2. View Output
+   ✓ BUILD COMPLETE
+   Container: ace-myapp-180530
+   Flow endpoint: http://localhost:7800
+   Admin API: http://localhost:7600/v1/integrationServers
+
+3. Test Container
+   curl http://localhost:7800/your-flow
+   docker logs -f ace-myapp-180530
+
+4. Verify Working
+   docker ps  (check container is running)
+
+5. Deploy to Jenkins
+   Once verified, push BAR to GitHub
+   Trigger Jenkins job with acev13Pipeline
+
+
+📚 HELP & DOCUMENTATION
+─────────────────────────────────────────────────────────────────────────────────
+
+Full Documentation:
+  Open: BUILD_ACE_LOCAL_README.md
+
+PowerShell Help:
+  Get-Help .\build-ace-local.ps1
+
+Bash Help:
+  ./build-ace-local.sh -h
+
+Port Registry Guide:
+  Open: PORT_REGISTRY_GUIDE.md
+
+
+═════════════════════════════════════════════════════════════════════════════════
+                    Last Updated: 2026-09-05
+═════════════════════════════════════════════════════════════════════════════════

@@ -5,15 +5,17 @@ def call(Map config) {
         environment {
             APP_NAME = "${config.appName}"
             ACE_PROJECT = "${config.aceProjectName ?: 'test_app'}"
-            HOST_PORT = "${config.hostPort ?: '7800'}"
-            ADMIN_PORT = "${config.adminPort ?: '7600'}"
+            ACE_ENVIRONMENT = "${config.environment ?: 'dev'}"
             BUILD_CONT = "ace-builder-${env.BUILD_ID}"
-            
-            // Get Short Git Commit ID (First 7 characters)
-            GIT_SHORT_ID = "${env.GIT_COMMIT[0..6]}"
-            
-            // Define the BAR file name dynamically
+
+            // Get Short Git Commit ID (First 7 characters) with fallback for local/non-Git runs
+            GIT_SHORT_ID = "${(env.GIT_COMMIT ?: 'dev0000')[0..6]}"
+
+            // Define the BAR file name dynamically with version info
             BAR_FILE_NAME = "${config.appName}_${env.GIT_SHORT_ID}.bar"
+
+            // Unique container name per BAR/build for independent integration servers
+            CONTAINER_NAME = "ace-${config.appName}-${env.BUILD_NUMBER}"
         }
 
         stages {
@@ -70,10 +72,9 @@ def call(Map config) {
                                 chmod -R 775 /home/aceuser/ace-server
                             
                             USER 1001
-                            
-                            # Start server using the work directory
-                            CMD ["/opt/ibm/ace-13/server/bin/mqsiserver", "-w", "/home/aceuser/ace-server"]
-                            
+
+                            CMD ["/bin/bash", "-c", ". /opt/ibm/ace-13/server/bin/mqsiprofile && exec /opt/ibm/ace-13/server/bin/mqsiserver -w /home/aceuser/ace-server"]
+
                             EXPOSE 7800 7600
                         """.stripIndent()
 
@@ -85,16 +86,41 @@ def call(Map config) {
 
             stage('3. Deploy Container') {
                 steps {
-                    sh """
-                        docker stop ${env.APP_NAME} || true
-                        docker rm ${env.APP_NAME} || true
-                        docker run -d \
-                            --name ${env.APP_NAME} \
-                            -p ${env.HOST_PORT}:7800 \
-                            -p ${env.ADMIN_PORT}:7600 \
-                            -e LICENSE=accept \
-                            ${env.APP_NAME}:latest
-                    """
+                    script {
+                        // Load port registry manager and allocate ports
+                        def portRegistry = load 'vars/portRegistry.groovy'
+                        def ports = portRegistry.allocatePort(env.APP_NAME, env.ACE_ENVIRONMENT, env.BUILD_NUMBER)
+                        env.CONTAINER_HOST_PORT = ports.hostFlowPort.toString()
+                        env.CONTAINER_ADMIN_PORT = ports.hostAdminPort.toString()
+                        env.PORT_KEY = ports.key
+                        
+                        sh """
+                            echo "Deploying ACE container: ${env.CONTAINER_NAME}"
+                            echo "Environment: ${env.ACE_ENVIRONMENT}"
+                            echo "Flow port: localhost:${env.CONTAINER_HOST_PORT} -> 7800"
+                            echo "Admin port: localhost:${env.CONTAINER_ADMIN_PORT} -> 7600"
+                            echo "BAR file: ${env.BAR_FILE_NAME}"
+
+                            docker rm -f ${env.CONTAINER_NAME} || true
+
+                            docker run -d \
+                                --name ${env.CONTAINER_NAME} \
+                                -p ${env.CONTAINER_HOST_PORT}:7800 \
+                                -p ${env.CONTAINER_ADMIN_PORT}:7600 \
+                                -e LICENSE=accept \
+                                -l app=${env.APP_NAME} \
+                                -l build=${env.BUILD_NUMBER} \
+                                -l bar_file=${env.BAR_FILE_NAME} \
+                                -l git_commit=${env.GIT_SHORT_ID} \
+                                -l environment=${env.ACE_ENVIRONMENT} \
+                                -l port_key=${env.PORT_KEY} \
+                                ${env.APP_NAME}:latest
+
+                            sleep 2
+                            docker ps --filter "name=${env.CONTAINER_NAME}" | grep ${env.CONTAINER_NAME} || exit 1
+                            echo "✓ Container ${env.CONTAINER_NAME} is running successfully"
+                        """
+                    }
                 }
             }
         }
