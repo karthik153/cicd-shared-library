@@ -1,128 +1,71 @@
-def call(Map config) {
+def call(Map pipelineParams) {
     pipeline {
         agent any
-        
+
         environment {
-            APP_NAME = "${config.appName}"
-            ACE_PROJECT = "${config.aceProjectName ?: 'test_app'}"
-            ACE_ENVIRONMENT = "${config.environment ?: 'dev'}"
-            BUILD_CONT = "ace-builder-${env.BUILD_ID}"
+            // Define environment variables here
+            APP_NAME = "${pipelineParams.appName}"
+            BAR_NAME = "${pipelineParams.barName}"
+            IMAGE_NAME = "${pipelineParams.imageName}"
+            HOST_PORT = "${pipelineParams.hostPort}"
 
-            // Get Short Git Commit ID (First 7 characters) with fallback for local/non-Git runs
-            GIT_SHORT_ID = "${(env.GIT_COMMIT ?: 'dev0000')[0..6]}"
-
-            // Define the BAR file name dynamically with version info
-            BAR_FILE_NAME = "${config.appName}_${env.GIT_SHORT_ID}.bar"
-
-            // Unique container name per BAR/build for independent integration servers
-            CONTAINER_NAME = "ace-${config.appName}-${env.BUILD_NUMBER}"
+            TAG         = "build-${env.BUILD_NUMBER}"
+            PROFILE_PATH = "/opt/ibm/ace-13/server/bin/mqsiprofile"
         }
 
         stages {
-            stage('1. Build ACE BAR') {
+            stage('Clean & Checkout') {
                 steps {
-                    script {
-                        sh """
-                            # Start ephemeral builder
-                            docker run -d --name ${BUILD_CONT} -u root -e LICENSE=accept --entrypoint sleep ace_v13:latest infinity
-
-                            # Copy source to builder
-                            docker cp . ${BUILD_CONT}:/workspace
-
-                            # Package BAR with the new dynamic name
-                            docker exec -u root ${BUILD_CONT} /bin/bash -c "
-                                source /opt/ibm/ace-13/server/bin/mqsiprofile &&
-                                mkdir -p /workspace/generated-bars &&
-                                ibmint package --input-path /workspace --output-bar-file /workspace/generated-bars/${env.BAR_FILE_NAME} --project ${env.ACE_PROJECT} --compile-maps-and-schemas
-                            "
-
-                            # Copy the specific BAR file back to Jenkins workspace
-                            mkdir -p generated-bars
-                            docker cp ${BUILD_CONT}:/workspace/generated-bars/${env.BAR_FILE_NAME} ./generated-bars/
-                            
-                            docker stop ${BUILD_CONT}
-                            docker rm ${BUILD_CONT}
-                        """
-                    }
+                    cleanWs()
+                    checkout scm
                 }
             }
-
-            stage('2. Build App Image') {
+            stage('Build ACE BAR') {
                 steps {
-                    script {
-                        def dockerfileContent = """
-                            FROM ace_v13:latest
-                            USER root
-                            
-                            # MUST set license at the top so it is available during the build
-                            ENV LICENSE=accept
-                            
-                            # Create work directory
-                            RUN . /opt/ibm/ace-13/server/bin/mqsiprofile && \\
-                                mqsicreateworkdir /home/aceuser/ace-server
-                            
-                            # Copy and Deploy the BAR file
-                            COPY ./generated-bars/${env.BAR_FILE_NAME} /tmp/${env.BAR_FILE_NAME}
-                            
-                            RUN . /opt/ibm/ace-13/server/bin/mqsiprofile && \\
-                                ibmint deploy --input-bar-file /tmp/${env.BAR_FILE_NAME} --output-work-directory /home/aceuser/ace-server
-                            
-                            # Set permissions
-                            RUN chown -R 1001:0 /home/aceuser/ace-server && \\
-                                chmod -R 775 /home/aceuser/ace-server
-                            
-                            USER 1001
-
-                            CMD ["/bin/bash", "-c", ". /opt/ibm/ace-13/server/bin/mqsiprofile && exec /opt/ibm/ace-13/server/bin/mqsiserver -w /home/aceuser/ace-server"]
-
-                            EXPOSE 7800 7600
-                        """.stripIndent()
-
-                        writeFile file: 'Dockerfile', text: dockerfileContent
-                        sh "docker build -t ${env.APP_NAME}:latest ."
-                    }
+                    echo 'Building ACE BAR...'
+                    sh """
+                        source ${PROFILE_PATH}
+                        mqsicreatebar -data . -b ${BAR_NAME} -a ${APP_NAME}
+                    """
                 }
             }
-
-            stage('3. Deploy Container') {
+            stage('Docker Build') {
                 steps {
-                    script {
-                        // Load port registry manager and allocate ports
-                        def portRegistry = load 'vars/portRegistry.groovy'
-                        def ports = portRegistry.allocatePort(env.APP_NAME, env.ACE_ENVIRONMENT, env.BUILD_NUMBER)
-                        env.CONTAINER_HOST_PORT = ports.hostFlowPort.toString()
-                        env.CONTAINER_ADMIN_PORT = ports.hostAdminPort.toString()
-                        env.PORT_KEY = ports.key
+                    echo 'Building Docker image...'
+                    sh """
+                        docker build -t ${IMAGE_NAME}:${TAG} .
+                    """
+                    sh """
+                        docker tag ${IMAGE_NAME}:${TAG} ${IMAGE_NAME}:latest
+                    """
+                }
+            }
+            stage('Deploy Container') {
+                steps {
+                    echo "Deploying to Port ${env.HOST_PORT}"
+                        // Idempotency: Remove old container if it exists
+                        sh "docker rm -f ${env.APP_NAME} || true"
                         
+                        // Run using the parameters passed from Jenkinsfile
                         sh """
-                            echo "Deploying ACE container: ${env.CONTAINER_NAME}"
-                            echo "Environment: ${env.ACE_ENVIRONMENT}"
-                            echo "Flow port: localhost:${env.CONTAINER_HOST_PORT} -> 7800"
-                            echo "Admin port: localhost:${env.CONTAINER_ADMIN_PORT} -> 7600"
-                            echo "BAR file: ${env.BAR_FILE_NAME}"
-
-                            docker rm -f ${env.CONTAINER_NAME} || true
-
                             docker run -d \
-                                --name ${env.CONTAINER_NAME} \
-                                -p ${env.CONTAINER_HOST_PORT}:7800 \
-                                -p ${env.CONTAINER_ADMIN_PORT}:7600 \
-                                -e LICENSE=accept \
-                                -l app=${env.APP_NAME} \
-                                -l build=${env.BUILD_NUMBER} \
-                                -l bar_file=${env.BAR_FILE_NAME} \
-                                -l git_commit=${env.GIT_SHORT_ID} \
-                                -l environment=${env.ACE_ENVIRONMENT} \
-                                -l port_key=${env.PORT_KEY} \
-                                ${env.APP_NAME}:latest
-
-                            sleep 2
-                            docker ps --filter "name=${env.CONTAINER_NAME}" | grep ${env.CONTAINER_NAME} || exit 1
-                            echo "✓ Container ${env.CONTAINER_NAME} is running successfully"
+                            --name ${env.APP_NAME} \
+                            -p ${env.HOST_PORT}:7800 \
+                            -p 7600:7600 \
+                            -e LICENSE=accept \
+                            ${env.IMAGE_NAME}:${env.TAG}
                         """
                     }
                 }
             }
         }
+
+        post {
+            success {
+                echo 'SUCCESS: ${env.APP_NAME} is running on port ${env.HOST_PORT}'
+            }
+            failure {
+                echo 'FAILURE: Check the logs for errors.'
+            }
+        }
     }
-}
