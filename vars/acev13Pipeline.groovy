@@ -24,7 +24,7 @@ def call(Map pipelineParams) {
                 steps {
                     echo 'Building ACE BAR...'
                     sh """
-                        source ${PROFILE_PATH}
+                        . ${PROFILE_PATH}
                         mqsicreatebar -data . -b ${BAR_NAME} -a ${APP_NAME}
                     """
                 }
