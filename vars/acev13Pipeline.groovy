@@ -3,7 +3,6 @@ def call(Map params = [:]) {
         agent any
 
         environment {
-            // Use 'params' directly from the function argument
             APP_NAME    = "${params.appName ?: 'test-app'}"
             BAR_NAME    = "${params.barName ?: 'test.bar'}"
             IMAGE_NAME  = "${params.imageName ?: 'ace-app'}"
@@ -24,21 +23,36 @@ def call(Map params = [:]) {
             stage('Build ACE BAR') {
                 steps {
                     script {
-                        echo "Building BAR: ${env.BAR_NAME} for App: ${env.APP_NAME}"
+                        echo "Building BAR: ${env.BAR_NAME} using ibmint..."
                         
                         sh """
                             set -e
                             BUILDER_CONTAINER="ace-bar-builder-${env.BUILD_NUMBER}"
+                            
+                            # Ensure cleanup happens even if build fails
                             trap 'docker rm -f "\$BUILDER_CONTAINER" >/dev/null 2>&1 || true' EXIT
+                            
+                            # 1. Create a persistent builder container
                             docker create --name "\$BUILDER_CONTAINER" -u root \
                                 -e LICENSE=accept \
                                 --entrypoint "/bin/bash" \
                                 ${env.ACE_IMAGE} \
                                 -c "while true; do sleep 3600; done" >/dev/null
+                            
                             docker start "\$BUILDER_CONTAINER" >/dev/null
-                            docker exec "\$BUILDER_CONTAINER" mkdir -p /workspace
-                            docker cp "${env.APP_NAME}" "\$BUILDER_CONTAINER:/workspace/"
-                            docker exec -w /workspace "\$BUILDER_CONTAINER" /bin/bash -lc "source /opt/ibm/ace-13/server/bin/mqsiprofile && ibmint package --input-path './${env.APP_NAME}' --output-bar-file '${env.BAR_NAME}' --project '${env.APP_NAME}'"
+                            
+                            # 2. Copy the ENTIRE workspace into the container
+                            docker exec "\$BUILDER_CONTAINER" mkdir -p /workspace/src
+                            docker cp . "\$BUILDER_CONTAINER:/workspace/src/"
+                            
+                            # 3. Run the build using ibmint
+                            # We point --input-path to the src folder we just copied
+                            docker exec -w /workspace "\$BUILDER_CONTAINER" /bin/bash -lc "
+                                . /opt/ibm/ace-13/server/bin/mqsiprofile && \
+                                ibmint package --input-path ./src --output-bar-file ${env.BAR_NAME} --project ${env.APP_NAME}
+                            "
+                            
+                            # 4. Copy the finished BAR back to Jenkins host
                             docker cp "\$BUILDER_CONTAINER:/workspace/${env.BAR_NAME}" "${env.BAR_NAME}"
                         """
                     }
@@ -49,11 +63,14 @@ def call(Map params = [:]) {
                 steps {
                     script {
                         echo "Packaging Image: ${env.IMAGE_NAME}:${env.TAG}"
-                        writeFile file: 'Dockerfile.ace-generic', text: libraryResource('Dockerfile.ace-generic')
+                        
+                        // Pull the Dockerfile from the Shared Library 'resources' folder
+                        def dockerfileContent = libraryResource 'Dockerfile.ace-generic'
+                        writeFile file: 'Dockerfile', text: dockerfileContent
+                        
+                        // Build using the BAR we just extracted from the builder container
                         sh """
-                            mkdir -p generated-bars
-                            cp '${env.BAR_NAME}' 'generated-bars/${env.BAR_NAME}'
-                            docker build -f Dockerfile.ace-generic --build-arg BAR_FILE='${env.BAR_NAME}' -t ${env.IMAGE_NAME}:${env.TAG} .
+                            docker build -f Dockerfile --build-arg BAR_FILE='${env.BAR_NAME}' -t ${env.IMAGE_NAME}:${env.TAG} .
                         """
                         sh "docker tag ${env.IMAGE_NAME}:${env.TAG} ${env.IMAGE_NAME}:latest"
                     }
@@ -63,6 +80,7 @@ def call(Map params = [:]) {
             stage('Deploy Container') {
                 steps {
                     script {
+                        echo "Deploying to Port: ${env.HOST_PORT}"
                         sh "docker rm -f ${env.APP_NAME} || true"
                         sh """
                             docker run -d --name ${env.APP_NAME} \
@@ -72,6 +90,13 @@ def call(Map params = [:]) {
                         """
                     }
                 }
+            }
+        }
+
+        post {
+            always {
+                // Final safety cleanup of the workspace BAR file
+                echo "Cleaning up build artifacts..."
             }
         }
     }

@@ -1,45 +1,12 @@
-# IBM ACE (Application Connect Enterprise) v13 Integration Server
-# This Dockerfile builds a container image with deployed IBM ACE integration services
-# It accepts a BAR (Broker Archive) file as a build argument and deploys it to the ACE server
-
 FROM ace_v13:latest
-
-# Switch to root to create directories and configure the environment
-USER root
-
-# Set ACE license acceptance - MUST be set before any ACE commands
-ENV LICENSE=accept
-
-# Create directory to store BAR files (Broker Archive files contain integration flows)
-RUN mkdir -p /home/aceuser/bars
-
-# Build argument: path to the BAR file to deploy
-# Usage: docker build --build-arg BAR_FILE=<filename> .
 ARG BAR_FILE
-
-# Copy the BAR file from build context (generated-bars directory) to the container
-COPY generated-bars/${BAR_FILE} /home/aceuser/bars/
-
-# Create work directory first (must exist before mqsibar)
+ENV BAR_NAME=${BAR_FILE}
+ENV LICENSE=accept
+USER root
+RUN mkdir -p /home/aceuser/bars /home/aceuser/ace-server && chown -R aceuser:aceuser /home/aceuser/
+COPY --chown=aceuser:aceuser ${BAR_NAME} /home/aceuser/bars/
 RUN . /opt/ibm/ace-13/server/bin/mqsiprofile && \
-    mqsicreateworkdir /home/aceuser/ace-server
-
-# Extract and configure the BAR file using mqsibar command
-# -w: working directory for the integration server
-# -a: archive (BAR) to deploy
-# -c: compile the configuration
-RUN . /opt/ibm/ace-13/server/bin/mqsiprofile && \
-    mqsibar -w /home/aceuser/ace-server -a /home/aceuser/bars/${BAR_FILE} -c
-
-# Set proper permissions for the work directory
-RUN chown -R 1001:0 /home/aceuser/ace-server && \
-    chmod -R 775 /home/aceuser/ace-server
-
-# Switch back to non-root user for security (aceuser is the standard ACE user)
+    mqsibar -w /home/aceuser/ace-server -a /home/aceuser/bars/${BAR_NAME} -c
 USER aceuser
-
-# Expose the default ACE HTTP listener port (7800) and admin port (7600)
 EXPOSE 7800 7600
-
-# Start the ACE Integration Server in foreground mode with profiled environment
-CMD ["bash", "-c", "source /opt/ibm/ace-13/server/bin/mqsiprofile && exec /opt/ibm/ace-13/server/bin/mqsiserver -w /home/aceuser/ace-server"]
+CMD ["IntegrationServer", "--name", "ACEServer", "--work-dir", "/home/aceuser/ace-server"]
