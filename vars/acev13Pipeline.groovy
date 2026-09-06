@@ -32,7 +32,7 @@ def call(Map params = [:]) {
                                 --entrypoint "/bin/bash" \
                                 -v "${WORKSPACE}:/workspace" -w /workspace \
                                 ${env.ACE_IMAGE} \
-                                -c "source /opt/ibm/ace-13/server/bin/mqsiprofile && ibmint package --input-path . --output-bar-file '${env.BAR_NAME}' --project '${env.APP_NAME}'"
+                                -c "source /opt/ibm/ace-13/server/bin/mqsiprofile && ibmint package --input-path './${env.APP_NAME}' --output-bar-file '${env.BAR_NAME}' --project '${env.APP_NAME}'"
                         """
                     }
                 }
